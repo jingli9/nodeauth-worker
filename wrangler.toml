@@ -16,8 +16,6 @@ run_worker_first = ["/api/*"]
 binding = "DB"
 database_name = "nodeauth-db"
 
-[triggers]
-crons = ["0 2 * * *"]
 
 [observability]
 enabled = false
