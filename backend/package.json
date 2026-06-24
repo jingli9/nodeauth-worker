@@ -20,7 +20,7 @@
     "better-sqlite3": "^12.8.0",
     "dotenv": "^17.4.1",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.20",
+    "hono": "^4.12.25",
     "mysql2": "^3.20.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^9.0.1",

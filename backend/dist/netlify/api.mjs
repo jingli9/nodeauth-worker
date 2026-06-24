@@ -61868,6 +61868,9 @@ async function deriveMaskingKey(salt) {
   return Buffer2.from(hashBuffer);
 }
 async function maskSecret(secretText, maskingKey) {
+  if (secretText == null) {
+    throw new Error("Cannot mask null/undefined secret");
+  }
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const keyUsage = await crypto.subtle.importKey(
     "raw",
@@ -74715,14 +74718,15 @@ var VaultService = class {
     this.encryptionKey = env.ENCRYPTION_KEY;
   }
   async wrapZeroKnowledgeSecret(userId, sseEncryptedSecret) {
-    if (!sseEncryptedSecret) return sseEncryptedSecret;
+    if (!sseEncryptedSecret) return { secret: sseEncryptedSecret, hasError: false };
     try {
       const plain = await decryptField(sseEncryptedSecret, this.encryptionKey);
+      if (plain === null) return { secret: null, hasError: true };
       const salt = await generateDeviceKey(userId, this.env.JWT_SECRET || "");
       const maskingKey = await deriveMaskingKey(salt);
-      return await maskSecret(plain, maskingKey);
+      return { secret: await maskSecret(plain, maskingKey), hasError: false };
     } catch (e2) {
-      return sseEncryptedSecret;
+      return { secret: null, hasError: true };
     }
   }
   /**
@@ -74743,14 +74747,19 @@ var VaultService = class {
     const totalCount = await this.repository.count(search, category);
     const categoryStats = await this.repository.getCategoryStats();
     const trashCount = await this.repository.countDeleted();
+    let hasDecryptionError = false;
     const decryptedItems = await Promise.all(items.map(async (item) => {
       const { createdBy: _c, updatedBy: _u, ...rest } = item;
+      const { secret, hasError } = await this.wrapZeroKnowledgeSecret(userId, item.secret);
+      if (hasError) hasDecryptionError = true;
       return {
         ...rest,
-        secret: await this.wrapZeroKnowledgeSecret(userId, item.secret)
+        secret
       };
     }));
     return {
+      success: true,
+      hasDecryptionError,
       items: decryptedItems,
       totalCount,
       trashCount,
@@ -74849,8 +74858,8 @@ var VaultService = class {
     });
     const { createdBy: _c, updatedBy: _u, ...restCreated } = created;
     return {
-      ...restCreated,
-      secret: await this.wrapZeroKnowledgeSecret(userId, encryptedSecret)
+      ...created,
+      secret: (await this.wrapZeroKnowledgeSecret(userId, encryptedSecret)).secret
     };
   }
   /**
@@ -74902,9 +74911,12 @@ var VaultService = class {
       }
       encryptedSecret = await encryptField(finalSecret, this.encryptionKey);
     } else {
+      if (existing.secret && await decryptField(existing.secret, this.encryptionKey) === null) {
+        throw new AppError("cannot_update_decryption_failed_record", 400);
+      }
       encryptedSecret = existing.secret;
     }
-    const updateFields = {
+    const updatedItem = {
       service: normService,
       account: normAccount,
       secret: encryptedSecret,
@@ -74916,7 +74928,7 @@ var VaultService = class {
       category: normCategory || "",
       updatedAt: Date.now()
     };
-    const updated = await this.repository.update(id, updateFields, data.force ? void 0 : data.updatedAt);
+    const updated = await this.repository.update(id, updatedItem, data.force ? void 0 : data.updatedAt);
     if (!updated) {
       const item = await this.repository.findById(id);
       if (!item) {
@@ -74928,8 +74940,8 @@ var VaultService = class {
     const { createdBy: _c, updatedBy: _u, ...restExisting } = existing;
     return {
       ...restExisting,
-      ...updateFields,
-      secret: await this.wrapZeroKnowledgeSecret(userId, encryptedSecret)
+      ...updatedItem,
+      secret: (await this.wrapZeroKnowledgeSecret(userId, encryptedSecret)).secret
     };
   }
   /**
@@ -75705,6 +75717,7 @@ vault5.get("/", async (c) => {
   const result = await service.getAccountsPaginated(user.email || user.id, page, limit, search, category);
   return c.json({
     success: true,
+    hasDecryptionError: result.hasDecryptionError,
     vault: result.items,
     categoryStats: result.categoryStats,
     trashCount: result.trashCount,

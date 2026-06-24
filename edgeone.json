@@ -1,7 +1,9 @@
 {
+  "name": "nodeauth-worker",
   "installCommand": "npm install",
   "buildCommand": "node scripts/inject_vars.js --platform=edgeone",
   "outputDirectory": "frontend/dist",
+  "nodeVersion": "24.5.0",
   "schedules": [
     {
       "name": "daily-backup",
@@ -22,7 +24,8 @@
         "package.json",
         "package-lock.json",
         "scripts/inject_vars.js"
-      ]
+      ],
+      "maxDuration": 120
     }
   }
 }
