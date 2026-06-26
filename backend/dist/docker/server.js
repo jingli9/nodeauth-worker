@@ -1934,6 +1934,52 @@ var init_config = __esm({
   }
 });
 
+// src/shared/utils/request.ts
+var request_exports = {};
+__export(request_exports, {
+  getClientIp: () => getClientIp,
+  getRealRequestUrl: () => getRealRequestUrl
+});
+var getRealRequestUrl, getClientIp;
+var init_request = __esm({
+  "src/shared/utils/request.ts"() {
+    "use strict";
+    getRealRequestUrl = (c) => {
+      const edgeOneHost = c.req.header("eo-pages-host");
+      const forwardedHost = c.req.header("x-forwarded-host");
+      const hostHeader = c.req.header("host");
+      const requestUrl = new URL(c.req.url);
+      const forwardedProto = c.req.header("x-forwarded-proto");
+      if (edgeOneHost) {
+        requestUrl.hostname = edgeOneHost.split(",")[0].trim();
+      } else if (forwardedHost) {
+        requestUrl.hostname = forwardedHost.split(",")[0].trim();
+      } else if (hostHeader) {
+        requestUrl.hostname = hostHeader.split(",")[0].trim();
+      }
+      if (forwardedProto) {
+        requestUrl.protocol = forwardedProto.split(",")[0].trim() + ":";
+      } else if (requestUrl.hostname !== "localhost" && requestUrl.hostname !== "127.0.0.1") {
+        requestUrl.protocol = "https:";
+      }
+      return requestUrl.toString();
+    };
+    getClientIp = (c) => {
+      const cfIp = c.req.header("CF-Connecting-IP");
+      const eoIp = c.req.header("eo-connecting-ip");
+      const xRealIp = c.req.header("x-real-ip");
+      const forwardedFor = c.req.header("x-forwarded-for");
+      if (cfIp) return cfIp;
+      if (eoIp) return eoIp;
+      if (xRealIp) return xRealIp;
+      if (forwardedFor) {
+        return forwardedFor.split(",")[0].trim();
+      }
+      return "unknown";
+    };
+  }
+});
+
 // node_modules/tslib/tslib.es6.mjs
 var tslib_es6_exports = {};
 __export(tslib_es6_exports, {
@@ -22383,7 +22429,7 @@ ${prettyStateOverride(stateOverride)}`;
 
 // node_modules/viem/_esm/errors/request.js
 var HttpRequestError, RpcRequestError, TimeoutError;
-var init_request = __esm({
+var init_request2 = __esm({
   "node_modules/viem/_esm/errors/request.js"() {
     init_stringify();
     init_base();
@@ -22485,7 +22531,7 @@ var unknownErrorCode, RpcError, ProviderRpcError, ParseRpcError, InvalidRequestR
 var init_rpc = __esm({
   "node_modules/viem/_esm/errors/rpc.js"() {
     init_base();
-    init_request();
+    init_request2();
     unknownErrorCode = -1;
     RpcError = class extends BaseError2 {
       constructor(cause, { code, docsPath: docsPath8, metaMessages, name, shortMessage }) {
@@ -27614,7 +27660,7 @@ var init_ccip2 = __esm({
   "node_modules/viem/_esm/utils/ccip.js"() {
     init_call();
     init_ccip();
-    init_request();
+    init_request2();
     init_utils3();
     init_decodeErrorResult();
     init_encodeAbiParameters();
@@ -44355,7 +44401,41 @@ var SQLiteTransaction = class extends BaseSQLiteDatabase {
   }
 };
 
+// src/shared/db/schema/utils.ts
+function parseDatabasePublicKey(value) {
+  let parsedPk = value;
+  if (typeof parsedPk === "object" && !Array.isArray(parsedPk) && parsedPk !== null) {
+    const tempBytes = new Uint8Array(Object.values(parsedPk));
+    if (tempBytes[0] === 91 || tempBytes[0] >= 48 && tempBytes[0] <= 57) {
+      parsedPk = new TextDecoder().decode(tempBytes);
+    } else {
+      parsedPk = tempBytes;
+    }
+  }
+  if (typeof parsedPk === "string") {
+    try {
+      parsedPk = JSON.parse(parsedPk);
+    } catch (e2) {
+      if (parsedPk.includes(",")) {
+        parsedPk = parsedPk.split(",").map(Number);
+      }
+    }
+  }
+  return new Uint8Array(Array.isArray(parsedPk) ? parsedPk : Object.values(parsedPk));
+}
+
 // src/shared/db/schema/sqlite.ts
+var webAuthnPublicKey = customType2({
+  dataType() {
+    return "text";
+  },
+  toDriver(val) {
+    return JSON.stringify(Array.from(val));
+  },
+  fromDriver(value) {
+    return parseDatabasePublicKey(value);
+  }
+});
 var vault = sqliteTable("vault", {
   id: text2("id").primaryKey(),
   // UUID
@@ -44421,7 +44501,7 @@ var authPasskeys = sqliteTable("auth_passkeys", {
   // 在本应用中绑定的是邮箱
   name: text2("name"),
   // 别名
-  publicKey: text2("public_key").notNull(),
+  publicKey: webAuthnPublicKey("public_key").notNull(),
   // Uint8Array 序列化后的数组
   counter: integer2("counter").default(0),
   // 认证流计算器
@@ -48420,6 +48500,17 @@ var MySqlTransaction = class extends MySqlDatabase {
 };
 
 // src/shared/db/schema/mysql.ts
+var webAuthnPublicKey2 = customType3({
+  dataType() {
+    return "longtext";
+  },
+  toDriver(val) {
+    return JSON.stringify(Array.from(val));
+  },
+  fromDriver(value) {
+    return parseDatabasePublicKey(value);
+  }
+});
 var vault2 = mysqlTable("vault", {
   id: varchar2("id", { length: 36 }).primaryKey(),
   service: varchar2("service", { length: 255 }).notNull(),
@@ -48473,7 +48564,7 @@ var authPasskeys2 = mysqlTable("auth_passkeys", {
   credentialId: varchar2("credential_id", { length: 255 }).primaryKey(),
   userId: varchar2("user_id", { length: 255 }).notNull(),
   name: varchar2("name", { length: 255 }),
-  publicKey: longtext("public_key").notNull(),
+  publicKey: webAuthnPublicKey2("public_key").notNull(),
   counter: bigint2("counter", { mode: "number" }).default(0),
   lastUsedAt: bigint2("last_used_at", { mode: "number" }),
   transports: varchar2("transports", { length: 255 }),
@@ -51728,6 +51819,17 @@ var PgTransaction = class extends PgDatabase {
 };
 
 // src/shared/db/schema/pg.ts
+var webAuthnPublicKey3 = customType({
+  dataType() {
+    return "text";
+  },
+  toDriver(val) {
+    return JSON.stringify(Array.from(val));
+  },
+  fromDriver(value) {
+    return parseDatabasePublicKey(value);
+  }
+});
 var vault3 = pgTable("vault", {
   id: varchar("id").primaryKey(),
   service: varchar("service").notNull(),
@@ -51781,7 +51883,7 @@ var authPasskeys3 = pgTable("auth_passkeys", {
   credentialId: varchar("credential_id").primaryKey(),
   userId: varchar("user_id").notNull(),
   name: varchar("name"),
-  publicKey: text("public_key").notNull(),
+  publicKey: webAuthnPublicKey3("public_key").notNull(),
   counter: bigint("counter", { mode: "number" }).default(0),
   lastUsedAt: bigint("last_used_at", { mode: "number" }),
   transports: text("transports"),
@@ -51994,6 +52096,9 @@ async function deriveMaskingKey(salt) {
   return Buffer2.from(hashBuffer);
 }
 async function maskSecret(secretText, maskingKey) {
+  if (secretText == null) {
+    throw new Error("Cannot mask null/undefined secret");
+  }
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const keyUsage = await crypto.subtle.importKey(
     "raw",
@@ -52185,6 +52290,7 @@ async function authMiddleware(c, next) {
 // src/shared/middleware/rateLimitMiddleware.ts
 init_config();
 init_logger();
+init_request();
 var rateLimit = (options) => {
   return async (c, next) => {
     const db2 = c.env.DB;
@@ -52192,7 +52298,7 @@ var rateLimit = (options) => {
       await next();
       return;
     }
-    const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+    const clientIp = getClientIp(c);
     const path7 = c.req.path;
     const key = options.keyBuilder ? options.keyBuilder(c) : `rl:${clientIp}:${path7}`;
     const now = Date.now();
@@ -56589,25 +56695,34 @@ var WebAuthnService = class {
    * 验证注册响应
    */
   async verifyRegistrationResponse(userEmail, body, expectedChallenge, credentialName) {
-    const verification = await verifyRegistrationResponse({
-      response: body,
-      expectedChallenge,
-      expectedOrigin: this.origin,
-      expectedRPID: this.rpID
-    });
-    if (verification.verified && verification.registrationInfo) {
-      const { credential } = verification.registrationInfo;
-      await this.env.DB.insert(authPasskeys4).values({
-        credentialId: credential.id,
-        userId: userEmail,
-        publicKey: credential.publicKey,
-        counter: verification.registrationInfo.credential.counter,
-        name: credentialName || `Passkey ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
-        createdAt: Date.now()
+    try {
+      const verification = await verifyRegistrationResponse({
+        response: body,
+        expectedChallenge,
+        expectedOrigin: this.origin,
+        expectedRPID: this.rpID
       });
-      return { success: true };
+      if (verification.verified && verification.registrationInfo) {
+        const { credential } = verification.registrationInfo;
+        await this.env.DB.insert(authPasskeys4).values({
+          credentialId: credential.id,
+          userId: userEmail,
+          publicKey: credential.publicKey,
+          // 经过 customType 处理
+          counter: verification.registrationInfo.credential.counter,
+          name: credentialName || `Passkey ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
+          createdAt: Date.now()
+        });
+        return { success: true };
+      }
+      throw new AppError("webauthn_registration_failed", 400);
+    } catch (error) {
+      console.error("WebAuthn Registration Error:", error);
+      if (this.env.ENVIRONMENT !== "development") {
+        throw new AppError("registration_failed", 400);
+      }
+      throw new AppError(`registration_failed: ${error.message || error}`, 400);
     }
-    throw new AppError("webauthn_registration_failed", 400);
   }
   /**
    * 生成登录选项
@@ -56628,18 +56743,34 @@ var WebAuthnService = class {
     if (!credential) {
       throw new AppError("passkey_not_found", 404);
     }
-    const verification = await verifyAuthenticationResponse({
-      response: body,
-      expectedChallenge,
-      expectedOrigin: this.origin,
-      expectedRPID: this.rpID,
-      credential: {
-        id: credential.credentialId,
-        publicKey: new Uint8Array(Object.values(credential.publicKey)),
-        counter: credential.counter,
-        transports: []
+    let verification;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: body,
+        expectedChallenge,
+        expectedOrigin: this.origin,
+        expectedRPID: this.rpID,
+        credential: {
+          id: credential.credentialId,
+          publicKey: credential.publicKey,
+          counter: credential.counter,
+          transports: []
+        }
+      });
+    } catch (error) {
+      console.error("WebAuthn Auth Error:", error);
+      if (this.env.ENVIRONMENT !== "development") {
+        throw new AppError("authentication_failed", 400);
       }
-    });
+      let pkStr = "";
+      try {
+        pkStr = JSON.stringify(credential.publicKey).substring(0, 100);
+      } catch (e2) {
+        pkStr = String(credential.publicKey);
+      }
+      const debugInfo = `len=${credential.publicKey?.length}, type=${typeof credential.publicKey}, val=${pkStr}`;
+      throw new AppError(`login_failed: ${error.message || error} | Debug: ${debugInfo}`, 400);
+    }
     if (verification.verified && verification.authenticationInfo) {
       await this.env.DB.update(authPasskeys4).set({
         counter: verification.authenticationInfo.newCounter,
@@ -56845,7 +56976,7 @@ init_encodeFunctionData();
 init_abi();
 init_base();
 init_contract();
-init_request();
+init_request2();
 init_rpc();
 var EXECUTION_REVERTED_ERROR_CODE = 3;
 function getContractError(err, { abi: abi2, address, args, docsPath: docsPath8, functionName, sender }) {
@@ -59849,7 +59980,7 @@ async function verifyAuthorization({ address, authorization, signature }) {
 
 // node_modules/viem/_esm/utils/buildRequest.js
 init_base();
-init_request();
+init_request2();
 init_rpc();
 init_utils3();
 
@@ -60076,7 +60207,7 @@ function defineChain(chain) {
 init_fromHex();
 
 // node_modules/viem/_esm/utils/rpc/http.js
-init_request();
+init_request2();
 init_utils3();
 
 // node_modules/viem/_esm/utils/promise/withTimeout.js
@@ -64112,7 +64243,7 @@ function createTransport({ key, methods, name, request: request2, retryCount = 3
 }
 
 // node_modules/viem/_esm/clients/transports/http.js
-init_request();
+init_request2();
 
 // node_modules/viem/_esm/errors/transport.js
 init_base();
@@ -64344,10 +64475,11 @@ var Web3WalletAuthService = class {
 
 // src/features/auth/authRoutes.ts
 init_logger();
+init_request();
 var auth = new Hono2();
 var isSecureContext = (c) => c.env.ENVIRONMENT !== "development";
 var getService = (c) => new AuthService(c.env);
-var getWebAuthnService = (c) => new WebAuthnService(c.env, c.req.url, c.req.header());
+var getWebAuthnService = (c) => new WebAuthnService(c.env, getRealRequestUrl(c), c.req.header());
 var getWeb3WalletAuthService = (c) => new Web3WalletAuthService(c.env);
 var getSessionService = (c) => new SessionService(c.env);
 var cachedPasskeyStatus = null;
@@ -64414,7 +64546,7 @@ auth.post("/callback/:provider", rateLimit({
   }
   deleteCookie(c, stateCookieName, { path: "/", secure: isSecureContext(c), sameSite: "Lax" });
   const service = getService(c);
-  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+  const clientIp = getClientIp(c);
   const userAgent = c.req.header("User-Agent") || "Unknown Device";
   const { token, userInfo, deviceKey, needsEmergency, encryptionKey, license } = await service.handleOAuthCallback(providerName, body, clientIp, userAgent, body.deviceId);
   setCookie(c, "auth_token", token, {
@@ -64534,7 +64666,7 @@ auth.post("/webauthn/login/verify", rateLimit({
   const body = await c.req.json();
   const expectedChallenge = getCookie(c, "webauthn_login_challenge");
   if (!expectedChallenge) throw new AppError("webauthn_challenge_missing", 400);
-  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+  const clientIp = getClientIp(c);
   const userAgent = c.req.header("User-Agent") || "Unknown Device";
   const service = getWebAuthnService(c);
   const result = await service.verifyAuthenticationResponse(body, expectedChallenge, clientIp, userAgent, body.deviceId);
@@ -64613,7 +64745,7 @@ auth.post("/web3/login/verify", rateLimit({
   const body = await c.req.json();
   const expectedNonce = getCookie(c, "web3_login_nonce");
   if (!expectedNonce) throw new AppError("web3_nonce_missing", 400);
-  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+  const clientIp = getClientIp(c);
   const userAgent = c.req.header("User-Agent") || "Unknown Device";
   const service = getWeb3WalletAuthService(c);
   const result = await service.verifyAuthenticationResponse(
@@ -64660,7 +64792,7 @@ auth.get("/sessions", authMiddleware, async (c) => {
   const user = c.get("user");
   const currentSessionId = c.get("sessionId");
   const service = getSessionService(c);
-  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+  const clientIp = getClientIp(c);
   if (currentSessionId) {
     c.executionCtx?.waitUntil?.(service.heartbeat(currentSessionId, clientIp));
   }
@@ -64696,7 +64828,7 @@ auth.post("/extension-session", authMiddleware, rateLimit({
 }), async (c) => {
   const user = c.get("user");
   const body = await c.req.json();
-  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+  const clientIp = getClientIp(c);
   let deviceId = body?.deviceId;
   if (typeof deviceId === "string" && deviceId.length > 64) {
     deviceId = deviceId.substring(0, 64);
@@ -64814,14 +64946,15 @@ var VaultService = class {
     this.encryptionKey = env.ENCRYPTION_KEY;
   }
   async wrapZeroKnowledgeSecret(userId, sseEncryptedSecret) {
-    if (!sseEncryptedSecret) return sseEncryptedSecret;
+    if (!sseEncryptedSecret) return { secret: sseEncryptedSecret, hasError: false };
     try {
       const plain = await decryptField(sseEncryptedSecret, this.encryptionKey);
+      if (plain === null) return { secret: null, hasError: true };
       const salt = await generateDeviceKey(userId, this.env.JWT_SECRET || "");
       const maskingKey = await deriveMaskingKey(salt);
-      return await maskSecret(plain, maskingKey);
+      return { secret: await maskSecret(plain, maskingKey), hasError: false };
     } catch (e2) {
-      return sseEncryptedSecret;
+      return { secret: null, hasError: true };
     }
   }
   /**
@@ -64842,14 +64975,19 @@ var VaultService = class {
     const totalCount = await this.repository.count(search, category);
     const categoryStats = await this.repository.getCategoryStats();
     const trashCount = await this.repository.countDeleted();
+    let hasDecryptionError = false;
     const decryptedItems = await Promise.all(items.map(async (item) => {
       const { createdBy: _c, updatedBy: _u, ...rest } = item;
+      const { secret, hasError } = await this.wrapZeroKnowledgeSecret(userId, item.secret);
+      if (hasError) hasDecryptionError = true;
       return {
         ...rest,
-        secret: await this.wrapZeroKnowledgeSecret(userId, item.secret)
+        secret
       };
     }));
     return {
+      success: true,
+      hasDecryptionError,
       items: decryptedItems,
       totalCount,
       trashCount,
@@ -64948,8 +65086,8 @@ var VaultService = class {
     });
     const { createdBy: _c, updatedBy: _u, ...restCreated } = created;
     return {
-      ...restCreated,
-      secret: await this.wrapZeroKnowledgeSecret(userId, encryptedSecret)
+      ...created,
+      secret: (await this.wrapZeroKnowledgeSecret(userId, encryptedSecret)).secret
     };
   }
   /**
@@ -65001,9 +65139,12 @@ var VaultService = class {
       }
       encryptedSecret = await encryptField(finalSecret, this.encryptionKey);
     } else {
+      if (existing.secret && await decryptField(existing.secret, this.encryptionKey) === null) {
+        throw new AppError("cannot_update_decryption_failed_record", 400);
+      }
       encryptedSecret = existing.secret;
     }
-    const updateFields = {
+    const updatedItem = {
       service: normService,
       account: normAccount,
       secret: encryptedSecret,
@@ -65015,7 +65156,7 @@ var VaultService = class {
       category: normCategory || "",
       updatedAt: Date.now()
     };
-    const updated = await this.repository.update(id, updateFields, data.force ? void 0 : data.updatedAt);
+    const updated = await this.repository.update(id, updatedItem, data.force ? void 0 : data.updatedAt);
     if (!updated) {
       const item = await this.repository.findById(id);
       if (!item) {
@@ -65027,8 +65168,8 @@ var VaultService = class {
     const { createdBy: _c, updatedBy: _u, ...restExisting } = existing;
     return {
       ...restExisting,
-      ...updateFields,
-      secret: await this.wrapZeroKnowledgeSecret(userId, encryptedSecret)
+      ...updatedItem,
+      secret: (await this.wrapZeroKnowledgeSecret(userId, encryptedSecret)).secret
     };
   }
   /**
@@ -65804,6 +65945,7 @@ vault5.get("/", async (c) => {
   const result = await service.getAccountsPaginated(user.email || user.id, page, limit, search, category);
   return c.json({
     success: true,
+    hasDecryptionError: result.hasDecryptionError,
     vault: result.items,
     categoryStats: result.categoryStats,
     trashCount: result.trashCount,
@@ -78910,7 +79052,8 @@ health.get("/health-check", async (c) => {
   c.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   c.header("Pragma", "no-cache");
   c.header("Expires", "0");
-  const result = await runHealthCheck(c.env, c.req.url);
+  const { getRealRequestUrl: getRealRequestUrl2 } = await Promise.resolve().then(() => (init_request(), request_exports));
+  const result = await runHealthCheck(c.env, getRealRequestUrl2(c));
   return c.json({
     success: true,
     ...result
@@ -78920,6 +79063,7 @@ var healthRoutes_default = health;
 
 // src/features/emergency/emergencyRoutes.ts
 init_config();
+init_request();
 var emergency = new Hono2();
 emergency.post("/confirm", authMiddleware, rateLimit({
   windowMs: SECURITY_CONFIG.LOCKOUT_TIME,
@@ -78932,7 +79076,7 @@ emergency.post("/confirm", authMiddleware, rateLimit({
   }
   const repository = new EmergencyRepository(c.env.DB);
   await repository.confirmEmergency();
-  const clientIp = c.req.header("CF-Connecting-IP") || "unknown";
+  const clientIp = getClientIp(c);
   await resetRateLimit(c, `rl:${clientIp}:/api/emergency/confirm`);
   return c.json({
     success: true,
@@ -78950,10 +79094,20 @@ var proxyRequest = async (targetHost, targetPath, c) => {
   url.pathname = targetPath;
   url.port = "";
   url.protocol = "https:";
-  const headers = new Headers(c.req.raw.headers);
+  const headers = new Headers();
+  if (c.req.raw && c.req.raw.headers) {
+    c.req.raw.headers.forEach((value, key) => {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey.startsWith("x-scf-") || lowerKey.startsWith("eo-") || lowerKey.startsWith("x-cube-") || lowerKey.startsWith("cf-")) {
+        return;
+      }
+      if (["x-forwarded-for", "x-real-ip", "host"].includes(lowerKey)) {
+        return;
+      }
+      headers.set(key, value);
+    });
+  }
   headers.set("Host", targetHost);
-  headers.delete("cf-connecting-ip");
-  headers.delete("x-forwarded-for");
   try {
     const res = await fetch(url.toString(), {
       method: c.req.method,
@@ -79031,7 +79185,8 @@ app.use("/api/*", async (c, next) => {
     await next();
     return;
   }
-  const securityResult = await runHealthCheck(c.env, c.req.url);
+  const { getRealRequestUrl: getRealRequestUrl2 } = await Promise.resolve().then(() => (init_request(), request_exports));
+  const securityResult = await runHealthCheck(c.env, getRealRequestUrl2(c));
   if (securityResult.status === "fail") {
     return c.json({
       code: 403,
